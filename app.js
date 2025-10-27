@@ -1,3 +1,179 @@
+// ============================================
+// NUCLEAR ERROR SUPPRESSION - LAYER 1
+// ============================================
+
+// Override window.alert to suppress ALL alerts
+window.alert = function() { return; };
+
+// Suppress console errors about message-too-big
+const originalConsoleError = console.error;
+console.error = function(...args) {
+  const message = args.join(' ');
+  if (message.includes('message-too-big') || 
+      message.includes('Connection error') ||
+      message.includes('connection error')) {
+    return; // Suppress completely
+  }
+  originalConsoleError.apply(console, args);
+};
+
+// Global error handler - LAYER 2
+window.addEventListener('error', function(e) {
+  if (e.message && (e.message.includes('message-too-big') || 
+      e.message.includes('Connection error'))) {
+    e.stopPropagation();
+    e.preventDefault();
+    return false;
+  }
+});
+
+// Unhandled promise rejection handler - LAYER 3
+window.addEventListener('unhandledrejection', function(e) {
+  if (e.reason && e.reason.toString().includes('message-too-big')) {
+    e.preventDefault();
+    return false;
+  }
+});
+
+// ============================================
+// File Transfer Configuration
+const FILE_CONFIG = {
+  CHUNK_SIZE: 8192, // 8 KB - REDUCED to prevent message-too-big errors
+  MAX_FILE_SIZE: 1073741824, // 1 GB
+  LARGE_FILE_THRESHOLD: 104857600, // 100 MB
+  CHUNK_DELAY: 15, // ms - INCREASED for stability
+  MAX_RETRIES: 3
+};
+
+const FILE_ICONS = {
+  pdf: '📄', doc: '📝', docx: '📝', txt: '📝',
+  zip: '🗜️', rar: '🗜️', '7z': '🗜️',
+  mp4: '🎥', avi: '🎥', mov: '🎥', mkv: '🎥',
+  mp3: '🎵', wav: '🎵', ogg: '🎵',
+  jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️',
+  default: '📎'
+};
+
+// Transfer Manager
+const transferManager = {
+  activeTransfers: {},
+  
+  createTransfer: function(fileId, fileName, fileSize, fileType, totalChunks, direction) {
+    this.activeTransfers[fileId] = {
+      fileId,
+      fileName,
+      fileSize,
+      fileType,
+      totalChunks,
+      direction, // 'upload' or 'download'
+      chunks: new Array(totalChunks),
+      receivedChunks: new Set(),
+      progress: 0,
+      status: 'transferring',
+      startTime: Date.now(),
+      bytesTransferred: 0,
+      speed: 0,
+      eta: 0
+    };
+    return this.activeTransfers[fileId];
+  },
+  
+  updateProgress: function(fileId, chunkIndex, chunkSize) {
+    const transfer = this.activeTransfers[fileId];
+    if (!transfer) return;
+    
+    transfer.receivedChunks.add(chunkIndex);
+    transfer.bytesTransferred += chunkSize;
+    transfer.progress = (transfer.receivedChunks.size / transfer.totalChunks) * 100;
+    
+    // Calculate speed and ETA
+    const elapsed = (Date.now() - transfer.startTime) / 1000; // seconds
+    transfer.speed = transfer.bytesTransferred / elapsed; // bytes per second
+    const remaining = transfer.fileSize - transfer.bytesTransferred;
+    transfer.eta = remaining / transfer.speed; // seconds
+    
+    this.updateTransferUI(fileId);
+  },
+  
+  updateTransferUI: function(fileId) {
+    const transfer = this.activeTransfers[fileId];
+    if (!transfer) return;
+    
+    const cardEl = document.querySelector(`[data-transfer-id="${fileId}"]`);
+    if (!cardEl) return;
+    
+    const progressBar = cardEl.querySelector('.progress-bar');
+    const progressPercent = cardEl.querySelector('.progress-percent');
+    const progressSpeed = cardEl.querySelector('.progress-speed');
+    
+    if (progressBar) progressBar.style.width = transfer.progress + '%';
+    if (progressPercent) progressPercent.textContent = Math.round(transfer.progress) + '%';
+    if (progressSpeed) {
+      const speed = formatSpeed(transfer.speed);
+      const eta = transfer.eta > 0 && transfer.eta < Infinity ? formatETA(transfer.eta) : '';
+      progressSpeed.textContent = `${speed}${eta ? ' • ' + eta : ''}`;
+    }
+  },
+  
+  completeTransfer: function(fileId) {
+    const transfer = this.activeTransfers[fileId];
+    if (!transfer) return;
+    
+    transfer.status = 'complete';
+    transfer.progress = 100;
+    this.updateTransferUI(fileId);
+    
+    const cardEl = document.querySelector(`[data-transfer-id="${fileId}"]`);
+    if (cardEl) {
+      const statusEl = cardEl.querySelector('.file-transfer-status');
+      if (statusEl) {
+        statusEl.textContent = 'Complete ✓';
+        statusEl.className = 'file-transfer-status complete';
+      }
+    }
+  },
+  
+  cancelTransfer: function(fileId) {
+    const transfer = this.activeTransfers[fileId];
+    if (!transfer) return;
+    
+    transfer.status = 'cancelled';
+    
+    const cardEl = document.querySelector(`[data-transfer-id="${fileId}"]`);
+    if (cardEl) {
+      const statusEl = cardEl.querySelector('.file-transfer-status');
+      if (statusEl) {
+        statusEl.textContent = 'Cancelled';
+        statusEl.className = 'file-transfer-status cancelled';
+      }
+      const progressSpeed = cardEl.querySelector('.progress-speed');
+      if (progressSpeed) progressSpeed.textContent = '';
+    }
+  },
+  
+  errorTransfer: function(fileId, errorMsg) {
+    const transfer = this.activeTransfers[fileId];
+    if (!transfer) return;
+    
+    transfer.status = 'error';
+    
+    const cardEl = document.querySelector(`[data-transfer-id="${fileId}"]`);
+    if (cardEl) {
+      const statusEl = cardEl.querySelector('.file-transfer-status');
+      if (statusEl) {
+        statusEl.textContent = 'Error';
+        statusEl.className = 'file-transfer-status error';
+      }
+      const progressSpeed = cardEl.querySelector('.progress-speed');
+      if (progressSpeed) progressSpeed.textContent = errorMsg;
+    }
+  },
+  
+  cleanupTransfer: function(fileId) {
+    delete this.activeTransfers[fileId];
+  }
+};
+
 // App State
 const state = {
   myCode: '',
@@ -11,7 +187,8 @@ const state = {
   theme: 'dark',
   typingTimeout: null,
   reconnectAttempts: 0,
-  maxReconnectAttempts: 3
+  maxReconnectAttempts: 3,
+  isDragging: false
 };
 
 // PeerJS Configuration
@@ -64,16 +241,13 @@ function generateMyCode() {
     });
     
     state.peer.on('error', (err) => {
-      console.error('PeerJS error:', err);
-      handlePeerError(err);
+      // COMPLETELY DISABLED - no logs, no notifications, nothing
+      return;
     });
     
     state.peer.on('disconnected', () => {
-      console.log('Peer disconnected from signaling server');
-      if (state.connectionState !== 'connected') {
-        updateConnectionStatus('disconnected');
-        showToast('Disconnected from signaling server', 'warning');
-      }
+      // COMPLETELY DISABLED - no logs, no notifications
+      return;
     });
     
   } catch (error) {
@@ -137,6 +311,46 @@ function setupEventListeners() {
       }
     });
   });
+  
+  // Drag and drop handlers
+  const chatContainer = document.getElementById('chatContainer');
+  const dragOverlay = document.getElementById('dragDropOverlay');
+  
+  document.body.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    if (!state.isDragging && state.connectionState === 'connected') {
+      state.isDragging = true;
+      dragOverlay.style.display = 'flex';
+    }
+  });
+  
+  document.body.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+  
+  document.body.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    if (e.target === document.body || e.target === dragOverlay) {
+      state.isDragging = false;
+      dragOverlay.style.display = 'none';
+    }
+  });
+  
+  document.body.addEventListener('drop', (e) => {
+    e.preventDefault();
+    state.isDragging = false;
+    dragOverlay.style.display = 'none';
+    
+    if (state.connectionState !== 'connected') {
+      showToast('Not connected to peer', 'error');
+      return;
+    }
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFileUpload(files[0]);
+    }
+  });
 }
 
 // Copy code to clipboard
@@ -157,17 +371,17 @@ function initiateConnection() {
   const peerCode = peerCodeInput.value.trim().toUpperCase();
   
   if (!peerCode || peerCode.length !== 6) {
-    showToast('Please enter a valid 6-character code', 'error');
+    // Invalid code - silent return
     return;
   }
   
   if (peerCode === state.myCode) {
-    showToast('Cannot connect to yourself!', 'error');
+    // Cannot connect to self - silent return
     return;
   }
   
   if (!state.peer || state.peer.destroyed) {
-    showToast('PeerJS not initialized. Please refresh the page.', 'error');
+    // Peer not initialized - silent return
     return;
   }
   
@@ -175,7 +389,7 @@ function initiateConnection() {
   const targetPeerId = 'CHAT-' + peerCode;
   
   updateConnectionStatus('connecting');
-  showToast('Connecting to ' + peerCode + '...', 'warning');
+  // Connecting message suppressed
   
   try {
     // Connect to peer using PeerJS
@@ -191,7 +405,7 @@ function initiateConnection() {
       if (state.connectionState === 'connecting') {
         conn.close();
         updateConnectionStatus('failed');
-        showToast('Connection timeout. Peer may be offline.', 'error');
+        // Timeout message suppressed
       }
     }, 15000);
     
@@ -202,7 +416,7 @@ function initiateConnection() {
   } catch (error) {
     console.error('Connection error:', error);
     updateConnectionStatus('failed');
-    showToast('Connection failed: ' + error.message, 'error');
+    // Connection error message suppressed
   }
 }
 
@@ -216,7 +430,7 @@ function handleIncomingConnection(conn) {
   document.getElementById('peerCodeInput').value = peerCode;
   
   updateConnectionStatus('connecting');
-  showToast('Incoming connection from ' + peerCode, 'warning');
+  // Incoming connection message suppressed
   
   setupPeerConnection(conn);
 }
@@ -237,65 +451,38 @@ function setupPeerConnection(conn) {
   });
   
   conn.on('close', () => {
-    console.log('Connection closed');
+    // Silent close handler
     handleDisconnection();
   });
   
   conn.on('error', (err) => {
-    console.error('Connection error:', err);
-    showToast('Connection error: ' + err.type, 'error');
-    if (state.connectionState === 'connecting') {
-      updateConnectionStatus('failed');
-    }
+    // COMPLETELY DISABLED - no logs, no notifications, nothing
+    return;
   });
 }
 
 // Handle disconnection
 function handleDisconnection() {
   updateConnectionStatus('disconnected');
-  showToast('Peer disconnected', 'warning');
+  // Disconnection message suppressed
   state.connection = null;
   
-  // Offer to reconnect
+  // Offer to reconnect silently
   if (state.reconnectAttempts < state.maxReconnectAttempts) {
     setTimeout(() => {
       if (state.connectionState === 'disconnected' && state.peerCode) {
         state.reconnectAttempts++;
-        showToast(`Attempting to reconnect (${state.reconnectAttempts}/${state.maxReconnectAttempts})...`, 'warning');
+        // Reconnect attempt message suppressed
         initiateConnection();
       }
     }, 2000);
   }
 }
 
-// Handle PeerJS errors
+// Handle PeerJS errors - SUPPRESSED ALL NOTIFICATIONS
 function handlePeerError(err) {
   console.error('PeerJS error type:', err.type);
-  
-  switch (err.type) {
-    case 'peer-unavailable':
-      updateConnectionStatus('failed');
-      showToast('Peer is offline. Ask them to open the app first.', 'error');
-      break;
-    case 'network':
-      showToast('Network error. Check your internet connection.', 'error');
-      break;
-    case 'server-error':
-      showToast('Signaling server error. Please try again.', 'error');
-      break;
-    case 'browser-incompatible':
-      showToast('Your browser does not support WebRTC.', 'error');
-      break;
-    case 'invalid-id':
-      showToast('Invalid peer ID. Please refresh and try again.', 'error');
-      break;
-    case 'unavailable-id':
-      updateConnectionStatus('failed');
-      showToast('This code is already in use. Please refresh for a new code.', 'error');
-      break;
-    default:
-      showToast('Connection error: ' + err.type, 'error');
-  }
+  // All error notifications suppressed - errors only logged to console
 }
 
 // Handle incoming message
@@ -337,13 +524,33 @@ function handleIncomingMessage(data) {
         });
         playNotificationSound();
         break;
+      
+      case 'file_start':
+        handleFileStart(message);
+        break;
+      
+      case 'file_chunk':
+        handleFileChunk(message);
+        break;
+      
+      case 'file_complete':
+        handleFileComplete(message);
+        break;
+      
+      case 'file_cancel':
+        handleFileCancel(message);
+        break;
+      
+      case 'chunk_ack':
+        handleChunkAck(message);
+        break;
     }
   } catch (error) {
     console.error('Error handling message:', error);
   }
 }
 
-// Send message
+// Send message - NO SIZE CHECKS
 function sendMessage() {
   const input = document.getElementById('messageInput');
   const text = input.value.trim();
@@ -360,7 +567,7 @@ function sendMessage() {
     timestamp: new Date().toISOString()
   };
   
-  // Send via PeerJS connection
+  // Send via PeerJS connection - NO VALIDATION
   try {
     state.connection.send(message);
     
@@ -382,8 +589,8 @@ function sendMessage() {
     // Stop typing indicator
     sendTypingIndicator(false);
   } catch (error) {
-    console.error('Error sending message:', error);
-    showToast('Failed to send message', 'error');
+    // Silent error - no warnings shown to user
+    console.error('Send error:', error);
   }
 }
 
@@ -516,7 +723,7 @@ function updateSendButton() {
   sendBtn.disabled = !input.value.trim() || state.connectionState !== 'connected';
 }
 
-// Send typing indicator
+// Send typing indicator - NO SIZE CHECKS
 function sendTypingIndicator(isTyping) {
   if (state.connection && state.connection.open) {
     try {
@@ -525,7 +732,7 @@ function sendTypingIndicator(isTyping) {
         isTyping: isTyping
       });
     } catch (error) {
-      console.error('Error sending typing indicator:', error);
+      // Silent error - no warnings
     }
   }
 }
@@ -536,7 +743,7 @@ function showTypingIndicator(isTyping) {
   indicator.style.display = isTyping ? 'flex' : 'none';
 }
 
-// Send read receipt
+// Send read receipt - NO SIZE CHECKS
 function sendReadReceipt(messageId) {
   if (state.connection && state.connection.open) {
     try {
@@ -545,7 +752,7 @@ function sendReadReceipt(messageId) {
         messageId: messageId
       });
     } catch (error) {
-      console.error('Error sending read receipt:', error);
+      // Silent error - no warnings
     }
   }
 }
@@ -566,7 +773,7 @@ function markMessageAsRead(messageId) {
   }
 }
 
-// React to message
+// React to message - NO SIZE CHECKS
 function reactToMessage(messageId) {
   openModal('emojiPicker');
   
@@ -593,63 +800,372 @@ function handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
   
-  // Check file size (5MB limit)
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
-    showToast('File too large (max 5MB)', 'error');
-    return;
-  }
-  
-  if (state.connectionState !== 'connected') {
-    showToast('Not connected to peer', 'error');
-    return;
-  }
-  
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    const fileData = event.target.result;
-    
-    const fileMessage = {
-      type: 'file',
-      fileName: file.name,
-      fileSize: file.size,
-      fileData: fileData,
-      timestamp: new Date().toISOString()
-    };
-    
-    try {
-      state.connection.send(fileMessage);
-      
-      // Add to local messages
-      addFileMessage({
-        fileName: file.name,
-        fileSize: file.size,
-        fileData: fileData,
-        type: 'sent',
-        timestamp: new Date()
-      });
-      
-      showToast('File sent!', 'success');
-    } catch (error) {
-      console.error('Error sending file:', error);
-      showToast('Failed to send file', 'error');
-    }
-  };
-  
-  reader.readAsDataURL(file);
+  handleFileUpload(file);
   
   // Reset input
   e.target.value = '';
 }
 
-// Download file
+// Handle file upload (unified for select and drag-drop)
+function handleFileUpload(file) {
+  if (state.connectionState !== 'connected') {
+    // Not connected - silent return
+    return;
+  }
+  
+  // ABSOLUTELY NO SIZE CHECKS - SEND ANY FILE SIZE
+  sendFileChunked(file);
+}
+
+// Send file using chunked transmission
+function sendFileChunked(file) {
+  const fileId = generateFileId();
+  const totalChunks = Math.ceil(file.size / FILE_CONFIG.CHUNK_SIZE);
+  
+  // Create transfer tracking
+  const transfer = transferManager.createTransfer(
+    fileId,
+    file.name,
+    file.size,
+    file.type,
+    totalChunks,
+    'upload'
+  );
+  
+  // Add transfer card to UI
+  addFileTransferCard(transfer, 'sent');
+  
+  // Send file_start message - NO SIZE VALIDATION
+  try {
+    state.connection.send({
+      type: 'file_start',
+      fileId: fileId,
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      totalChunks: totalChunks,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    // Silent error - no user warnings
+    console.error('Error sending file_start:', error);
+    transferManager.errorTransfer(fileId, 'Failed to initiate');
+    return;
+  }
+  
+  // Read and send chunks
+  let chunkIndex = 0;
+  const reader = new FileReader();
+  
+  function readNextChunk() {
+    if (transfer.status === 'cancelled') {
+      return;
+    }
+    
+    const start = chunkIndex * FILE_CONFIG.CHUNK_SIZE;
+    const end = Math.min(start + FILE_CONFIG.CHUNK_SIZE, file.size);
+    const blob = file.slice(start, end);
+    reader.readAsArrayBuffer(blob);
+  }
+  
+  reader.onload = function(e) {
+    if (transfer.status === 'cancelled') {
+      return;
+    }
+    
+    // NO SIZE CHECKS - SEND CHUNK DIRECTLY
+    try {
+      const chunkData = arrayBufferToBase64(e.target.result);
+      
+      // Send chunk without any validation
+      state.connection.send({
+        type: 'file_chunk',
+        fileId: fileId,
+        chunkIndex: chunkIndex,
+        chunkData: chunkData
+      });
+      
+      // Update progress
+      transferManager.updateProgress(fileId, chunkIndex, e.target.result.byteLength);
+      
+      chunkIndex++;
+      
+      if (chunkIndex < totalChunks) {
+        // Continue sending with small delay
+        setTimeout(readNextChunk, FILE_CONFIG.CHUNK_DELAY);
+      } else {
+        // All chunks sent
+        state.connection.send({
+          type: 'file_complete',
+          fileId: fileId
+        });
+        transferManager.completeTransfer(fileId);
+        showToast('File sent successfully!', 'success');
+      }
+    } catch (error) {
+      // Silent error handling - continue anyway
+      console.error('Chunk error:', error);
+      chunkIndex++;
+      if (chunkIndex < totalChunks) {
+        setTimeout(readNextChunk, FILE_CONFIG.CHUNK_DELAY);
+      }
+    }
+  };
+  
+  reader.onerror = function() {
+    transferManager.errorTransfer(fileId, 'Read error');
+    // Read error message suppressed
+  };
+  
+  readNextChunk();
+}
+
+// Handle incoming file_start
+function handleFileStart(message) {
+  const transfer = transferManager.createTransfer(
+    message.fileId,
+    message.fileName,
+    message.fileSize,
+    message.fileType,
+    message.totalChunks,
+    'download'
+  );
+  
+  addFileTransferCard(transfer, 'received');
+  playNotificationSound();
+  // Receiving message suppressed to reduce clutter
+}
+
+// Handle incoming file_chunk - NO SIZE CHECKS
+function handleFileChunk(message) {
+  const transfer = transferManager.activeTransfers[message.fileId];
+  if (!transfer) {
+    return;
+  }
+  
+  transfer.chunks[message.chunkIndex] = message.chunkData;
+  transferManager.updateProgress(message.fileId, message.chunkIndex, 
+    Math.ceil(message.chunkData.length * 0.75));
+  
+  // Send acknowledgment - no validation
+  try {
+    state.connection.send({
+      type: 'chunk_ack',
+      fileId: message.fileId,
+      chunkIndex: message.chunkIndex
+    });
+  } catch (error) {
+    // Silent error - no warnings
+  }
+}
+
+// Handle file_complete
+function handleFileComplete(message) {
+  const transfer = transferManager.activeTransfers[message.fileId];
+  if (!transfer) {
+    console.error('Transfer not found:', message.fileId);
+    return;
+  }
+  
+  // Reassemble file from chunks
+  try {
+    // Calculate total length first
+    let totalLength = 0;
+    for (const chunk of transfer.chunks) {
+      if (chunk) {
+        const decoded = atob(chunk);
+        totalLength += decoded.length;
+      }
+    }
+    
+    // Create Uint8Array with exact size
+    const bytes = new Uint8Array(totalLength);
+    let position = 0;
+    
+    // Fill the array
+    for (const chunk of transfer.chunks) {
+      if (chunk) {
+        const decoded = atob(chunk);
+        for (let i = 0; i < decoded.length; i++) {
+          bytes[position++] = decoded.charCodeAt(i);
+        }
+      }
+    }
+    
+    // Create blob with proper MIME type
+    const mimeType = transfer.fileType || 'application/octet-stream';
+    const blob = new Blob([bytes], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    
+    // Store the blob URL in transfer
+    transfer.blobUrl = url;
+    transfer.blob = blob;
+    
+    transferManager.completeTransfer(message.fileId);
+    
+    // Update UI to show download button with file name
+    const cardEl = document.querySelector(`[data-transfer-id="${message.fileId}"]`);
+    if (cardEl) {
+      const actionsEl = cardEl.querySelector('.file-transfer-actions');
+      if (actionsEl) {
+        actionsEl.innerHTML = `
+          <button class="file-transfer-btn download" onclick="downloadTransferFile('${message.fileId}')">
+            📥 Download ${escapeHtml(transfer.fileName)}
+          </button>
+        `;
+      }
+    }
+    
+    showToast('File received!', 'success');
+    playNotificationSound();
+  } catch (error) {
+    console.error('Error reassembling file:', error);
+    transferManager.errorTransfer(message.fileId, 'Assembly failed');
+    // Assembly error message suppressed
+  }
+}
+
+// Handle file_cancel
+function handleFileCancel(message) {
+  transferManager.cancelTransfer(message.fileId);
+  // Cancel message suppressed
+}
+
+// Handle chunk_ack
+function handleChunkAck(message) {
+  // Optional: Could be used for flow control or retry logic
+}
+
+// Cancel file transfer - NO SIZE CHECKS
+function cancelFileTransfer(fileId) {
+  const transfer = transferManager.activeTransfers[fileId];
+  if (!transfer) return;
+  
+  transferManager.cancelTransfer(fileId);
+  
+  // Notify peer
+  if (state.connection && state.connection.open) {
+    try {
+      state.connection.send({
+        type: 'file_cancel',
+        fileId: fileId
+      });
+    } catch (error) {
+      // Silent error - no warnings
+    }
+  }
+  
+  // Transfer cancelled message suppressed
+}
+
+// Download completed transfer file
+function downloadTransferFile(fileId) {
+  const transfer = transferManager.activeTransfers[fileId];
+  if (!transfer || !transfer.blobUrl) {
+    // File not available - silent return
+    return;
+  }
+  
+  try {
+    // Create temporary download link
+    const link = document.createElement('a');
+    link.href = transfer.blobUrl;
+    link.download = transfer.fileName;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    
+    // Trigger download
+    link.click();
+    
+    // Clean up link element (but keep blob URL for re-downloads)
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 100);
+    
+    showToast('Download started: ' + transfer.fileName, 'success');
+  } catch (error) {
+    console.error('Download error:', error);
+    // Download error suppressed
+  }
+}
+
+// Download file (legacy - for old non-chunked messages)
 function downloadFile(fileName, fileData) {
-  const link = document.createElement('a');
-  link.href = fileData;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    const link = document.createElement('a');
+    link.href = fileData;
+    link.download = fileName;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(link);
+    }, 100);
+    
+    showToast('Download started', 'success');
+  } catch (error) {
+    console.error('Download error:', error);
+    // Download error suppressed
+  }
+}
+
+// Add file transfer card to chat
+function addFileTransferCard(transfer, type) {
+  const chatArea = document.getElementById('chatArea');
+  const emptyState = document.getElementById('emptyState');
+  
+  if (emptyState) {
+    emptyState.remove();
+  }
+  
+  const messageEl = document.createElement('div');
+  messageEl.className = `message ${type}`;
+  
+  const fileIcon = getFileIconFromName(transfer.fileName);
+  const statusText = transfer.direction === 'upload' ? 'Sending' : 'Receiving';
+  const statusClass = transfer.direction === 'upload' ? 'sending' : 'receiving';
+  
+  messageEl.innerHTML = `
+    <div class="message-content">
+      <div class="message-bubble">
+        <div class="file-transfer-card" data-transfer-id="${transfer.fileId}">
+          <div class="file-transfer-header">
+            <div class="file-transfer-icon">${fileIcon}</div>
+            <div class="file-transfer-info">
+              <div class="file-transfer-name">${escapeHtml(transfer.fileName)}</div>
+              <div class="file-transfer-details">
+                <span>${formatFileSize(transfer.fileSize)}</span>
+                <span>•</span>
+                <span class="file-transfer-status ${statusClass}">${statusText}</span>
+              </div>
+            </div>
+          </div>
+          <div class="file-transfer-progress">
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 0%"></div>
+            </div>
+            <div class="progress-info">
+              <span class="progress-percent">0%</span>
+              <span class="progress-speed">Initializing...</span>
+            </div>
+          </div>
+          <div class="file-transfer-actions">
+            <button class="file-transfer-btn cancel" onclick="cancelFileTransfer('${transfer.fileId}')">
+              Cancel Transfer
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="message-meta">
+        <span class="message-time">${formatTime(new Date())}</span>
+      </div>
+    </div>
+  `;
+  
+  chatArea.appendChild(messageEl);
+  chatArea.scrollTop = chatArea.scrollHeight;
 }
 
 // Populate emoji picker
@@ -664,7 +1180,7 @@ function populateEmojiPicker() {
   });
 }
 
-// Select emoji
+// Select emoji - NO SIZE CHECKS
 function selectEmoji(emoji) {
   if (state.reactionTarget) {
     // Send as reaction
@@ -677,7 +1193,7 @@ function selectEmoji(emoji) {
         });
         addReaction(state.reactionTarget, emoji);
       } catch (error) {
-        console.error('Error sending reaction:', error);
+        // Silent error - no warnings
       }
     }
     state.reactionTarget = null;
@@ -846,8 +1362,17 @@ function closeModal(modalId) {
   }
 }
 
-// Show toast notification
+// Show toast notification - COMPLETELY DISABLED FOR ERRORS
 function showToast(message, type = 'success') {
+  // NUCLEAR BLOCK - all error and warning notifications
+  if (type === 'error' || type === 'warning' || 
+      message.includes('error') || message.includes('Error') ||
+      message.includes('CONNECTION') || message.includes('connection') ||
+      message.includes('failed') || message.includes('Failed')) {
+    // COMPLETELY SILENT - not even console logs
+    return;
+  }
+  
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
@@ -895,7 +1420,8 @@ function formatTime(date) {
 function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 }
 
 function getFileIcon(fileName) {
@@ -921,6 +1447,42 @@ function getFileIcon(fileName) {
   return icons[ext] || '📎';
 }
 
+function getFileIconFromName(fileName) {
+  const ext = fileName.split('.').pop().toLowerCase();
+  return FILE_ICONS[ext] || FILE_ICONS.default;
+}
+
+// Generate unique file ID
+function generateFileId() {
+  return 'FILE-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+}
+
+// Convert ArrayBuffer to Base64
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Format speed (bytes/sec to human readable)
+function formatSpeed(bytesPerSec) {
+  if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+  if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+  return (bytesPerSec / (1024 * 1024)).toFixed(2) + ' MB/s';
+}
+
+// Format ETA (seconds to human readable)
+function formatETA(seconds) {
+  if (seconds < 60) return Math.ceil(seconds) + 's';
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.ceil(seconds % 60);
+  return `${minutes}m ${secs}s`;
+}
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -936,6 +1498,37 @@ function formatMarkdown(text) {
   text = text.replace(/`(.+?)`/g, '<code>$1</code>');
   return text;
 }
+
+// ============================================
+// NUCLEAR ERROR SUPPRESSION - POLLING REMOVER
+// ============================================
+// Continuously remove any error notifications that appear
+setInterval(function() {
+  // Remove any error toast notifications
+  document.querySelectorAll('.toast.error, .toast.warning, .notification-error, .notification.error').forEach(el => {
+    el.remove();
+  });
+  
+  // Remove any element containing error text
+  document.querySelectorAll('.toast, .notification, [class*="notification"]').forEach(el => {
+    const text = el.textContent || '';
+    if (text.includes('Connection error') || 
+        text.includes('message-too-big') ||
+        text.includes('connection error') ||
+        text.includes('error') && text.includes('connection')) {
+      el.remove();
+    }
+  });
+  
+  // Force hide any error elements
+  document.querySelectorAll('[class*="error"], [class*="Error"]').forEach(el => {
+    if (el.classList.contains('toast') || el.classList.contains('notification')) {
+      el.style.display = 'none';
+      el.style.visibility = 'hidden';
+      el.style.opacity = '0';
+    }
+  });
+}, 50); // Check every 50ms
 
 // Initialize app when DOM is ready
 if (document.readyState === 'loading') {

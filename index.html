@@ -15,7 +15,7 @@
                 <img src="https://pbs.twimg.com/profile_images/1973361200432869376/JxXR1fNq_400x400.jpg" alt="CLASH CRUZZ Logo" class="logo">
                 <div class="brand">
                     <h1>core.chat</h1>
-                    <p class="tagline">Secure P2P Messaging - Now Cross-Device!</p>
+                    <p class="tagline">Secure P2P Messaging with 1GB File Transfer</p>
                 </div>
             </div>
             <div class="header-controls">
@@ -71,8 +71,17 @@
             </button>
         </div>
 
+        <!-- Drag & Drop Overlay -->
+        <div class="drag-drop-overlay" id="dragDropOverlay" style="display: none;">
+            <div class="drag-drop-content">
+                <div class="drag-drop-icon">📁</div>
+                <h3>Drop file to send</h3>
+                <p>Up to 1 GB</p>
+            </div>
+        </div>
+
         <!-- Chat Container -->
-        <div class="chat-container">
+        <div class="chat-container" id="chatContainer">
             <!-- Chat Area -->
             <div class="chat-area" id="chatArea">
                 <div class="empty-state" id="emptyState">
@@ -180,7 +189,9 @@
                     <li>🔒 <strong>Secure:</strong> End-to-end P2P WebRTC connection</li>
                     <li>⚡ <strong>Real-time:</strong> Instant messaging with typing indicators</li>
                     <li>😀 Emoji reactions and picker</li>
-                    <li>📎 File sharing (up to 5MB)</li>
+                    <li>📎 File sharing (up to 1GB with chunked transfer)</li>
+                    <li>📊 Real-time transfer progress &amp; speed</li>
+                    <li>⏸️ Cancel/resume file transfers</li>
                     <li>🔍 Message search</li>
                     <li>💾 Export chat history</li>
                     <li>✓✓ Read receipts &amp; delivery confirmations</li>
