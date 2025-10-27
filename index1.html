@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>core.chat - Secure P2P Messaging</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo-section">
+                <img src="image.jpg" alt="CLASH CRUZZ Logo" class="logo">
+                <div class="brand">
+                    <h1>core.chat</h1>
+                    <p class="tagline">Secure P2P Messaging</p>
+                </div>
+            </div>
+            <div class="header-controls">
+                <button id="themeToggle" class="icon-btn" title="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <button id="infoBtn" class="icon-btn" title="About">
+                    <span>ℹ️</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Connection Panel -->
+        <div class="connection-panel" id="connectionPanel">
+            <div class="connection-card">
+                <div class="code-section">
+                    <label>Your Chat Code</label>
+                    <div class="code-display">
+                        <span id="yourCode" class="code">------</span>
+                        <button id="copyCodeBtn" class="btn-copy" title="Copy code">
+                            <span>📋</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="peer-section">
+                    <label for="peerCodeInput">Connect to Peer</label>
+                    <div class="peer-input-group">
+                        <input 
+                            type="text" 
+                            id="peerCodeInput" 
+                            placeholder="Enter peer's code" 
+                            maxlength="6"
+                            autocomplete="off"
+                        >
+                        <button id="connectBtn" class="btn-primary">Connect</button>
+                    </div>
+                </div>
+
+                <div class="status-section">
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot disconnected"></span>
+                        <span class="status-text">Disconnected</span>
+                    </div>
+                </div>
+            </div>
+
+            <button id="togglePanelBtn" class="toggle-panel-btn">
+                <span>▼</span>
+            </button>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container">
+            <!-- Chat Area -->
+            <div class="chat-area" id="chatArea">
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">💬</div>
+                    <h3>No Active Connection</h3>
+                    <p>Share your code or enter a peer's code to start chatting</p>
+                </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div class="typing-indicator" id="typingIndicator" style="display: none;">
+                <span class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </span>
+                <span>Peer is typing...</span>
+            </div>
+
+            <!-- Message Input Area -->
+            <div class="message-input-area">
+                <div class="input-toolbar">
+                    <button id="emojiBtn" class="toolbar-btn" title="Emoji picker">
+                        😀
+                    </button>
+                    <button id="fileBtn" class="toolbar-btn" title="Send file">
+                        📎
+                    </button>
+                    <button id="searchBtn" class="toolbar-btn" title="Search messages">
+                        🔍
+                    </button>
+                    <button id="exportBtn" class="toolbar-btn" title="Export chat">
+                        💾
+                    </button>
+                    <button id="soundToggle" class="toolbar-btn" title="Toggle sound">
+                        <span id="soundIcon">🔔</span>
+                    </button>
+                </div>
+                <div class="input-container">
+                    <textarea 
+                        id="messageInput" 
+                        placeholder="Type a message... (Shift+Enter for new line)"
+                        rows="1"
+                        maxlength="5000"
+                    ></textarea>
+                    <button id="sendBtn" class="btn-send" disabled>
+                        <span>📤</span>
+                    </button>
+                </div>
+                <div class="input-footer">
+                    <span id="charCounter" class="char-counter">0 / 5000</span>
+                    <span class="markdown-hint">**bold** *italic* `code`</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Emoji Picker Modal -->
+    <div id="emojiPicker" class="modal" style="display: none;">
+        <div class="modal-content emoji-picker-content">
+            <div class="modal-header">
+                <h3>Select Emoji</h3>
+                <button class="modal-close" id="emojiPickerClose">×</button>
+            </div>
+            <div class="emoji-grid" id="emojiGrid">
+                <!-- Emojis will be populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Modal -->
+    <div id="searchModal" class="modal" style="display: none;">
+        <div class="modal-content search-modal-content">
+            <div class="modal-header">
+                <h3>Search Messages</h3>
+                <button class="modal-close" id="searchModalClose">×</button>
+            </div>
+            <input type="text" id="searchInput" placeholder="Search..." class="search-input">
+            <div class="search-results" id="searchResults">
+                <!-- Search results will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="infoModal" class="modal" style="display: none;">
+        <div class="modal-content info-modal-content">
+            <div class="modal-header">
+                <h3>About core.chat</h3>
+                <button class="modal-close" id="infoModalClose">×</button>
+            </div>
+            <div class="info-content">
+                <h4>How to Use</h4>
+                <ol>
+                    <li>Share your chat code with a peer</li>
+                    <li>Enter your peer's code and click Connect</li>
+                    <li>Start chatting securely with P2P encryption</li>
+                </ol>
+
+                <h4>Features</h4>
+                <ul>
+                    <li>🔒 End-to-end P2P WebRTC connection</li>
+                    <li>💬 Real-time messaging with typing indicators</li>
+                    <li>😀 Emoji reactions and picker</li>
+                    <li>📎 File sharing (up to 5MB)</li>
+                    <li>🔍 Message search</li>
+                    <li>💾 Export chat history</li>
+                    <li>🌓 Dark/Light theme toggle</li>
+                    <li>📝 Markdown support (bold, italic, code)</li>
+                </ul>
+
+                <h4>Keyboard Shortcuts</h4>
+                <ul>
+                    <li><kbd>Enter</kbd> - Send message</li>
+                    <li><kbd>Shift</kbd> + <kbd>Enter</kbd> - New line</li>
+                    <li><kbd>Ctrl</kbd> + <kbd>K</kbd> - Focus peer code input</li>
+                    <li><kbd>Ctrl</kbd> + <kbd>/</kbd> - Show this info</li>
+                </ul>
+
+                <p class="note"><strong>Note:</strong> All data is transmitted directly between peers. No messages are stored on any server.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" style="display: none;" accept="*/*">
+
+    <script src="app.js"></script>
+</body>
+</html>
